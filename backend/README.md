@@ -64,14 +64,21 @@ $REGION  = "europe-central2"   # Warsaw
 
 gcloud auth login
 gcloud config set project $PROJECT
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com iap.googleapis.com
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com iap.googleapis.com cloudresourcemanager.googleapis.com
+$NUM = gcloud projects describe $PROJECT --format="value(projectNumber)"
+# the build runs as the project's default compute account and needs this role
+gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$NUM-compute@developer.gserviceaccount.com" --role=roles/run.builder --condition=None
 ```
 
 **1. Admin token → Secret Manager** (generated, never typed or committed)
 
 ```powershell
 gcloud secrets create kse-docs-admin-token --replication-policy=automatic
-node -e "process.stdout.write(require('crypto').randomBytes(24).toString('base64url'))" | gcloud secrets versions add kse-docs-admin-token --data-file=-
+# (don't pipe into gcloud from PowerShell — it mangles the value; go via a temp file)
+$f = New-TemporaryFile
+node -e "require('fs').writeFileSync(process.argv[1], require('crypto').randomBytes(24).toString('base64url'))" $f
+gcloud secrets versions add kse-docs-admin-token --data-file=$f
+Remove-Item $f
 gcloud secrets add-iam-policy-binding kse-docs-admin-token --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
 ```
 
@@ -80,7 +87,7 @@ Show it to hand to editors: `gcloud secrets versions access latest --secret=kse-
 **2. Deploy** (re-run this to ship updates)
 
 ```powershell
-gcloud beta run deploy kse-docs --source . --region $REGION --service-account $SA --no-allow-unauthenticated --iap --set-secrets "ADMIN_TOKEN=kse-docs-admin-token:latest" --max-instances 1 --timeout 3600
+gcloud run deploy kse-docs --source . --region $REGION --service-account $SA --no-allow-unauthenticated --iap --set-secrets "ADMIN_TOKEN=kse-docs-admin-token:latest" --max-instances 1 --timeout 3600 --quiet
 ```
 
 - `--max-instances 1`: the snapshot and live-update stream live in memory, so one instance keeps every viewer consistent. It still scales to zero when unused.
@@ -89,8 +96,6 @@ gcloud beta run deploy kse-docs --source . --region $REGION --service-account $S
 **3. Let KSE accounts in**
 
 ```powershell
-$NUM = gcloud projects describe $PROJECT --format="value(projectNumber)"
-gcloud beta services identity create --service=iap.googleapis.com
 gcloud run services add-iam-policy-binding kse-docs --region $REGION --member="serviceAccount:service-$NUM@gcp-sa-iap.iam.gserviceaccount.com" --role=roles/run.invoker
 gcloud iap web add-iam-policy-binding --resource-type=cloud-run --service=kse-docs --region=$REGION --member="domain:kse.org.ua" --role=roles/iap.httpsResourceAccessor
 ```
@@ -103,7 +108,8 @@ To allow only specific people instead of the whole domain, use `--member="user:n
 
 | Symptom | Fix |
 |---|---|
-| Build fails with a permission error | Grant the build identity: `gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$NUM-compute@developer.gserviceaccount.com" --role=roles/run.builder`, then repeat step 2 |
+| Build fails with `storage.objects.get` denied | The `run.builder` grant in the prerequisites is missing or still propagating — wait a minute and repeat step 2 |
+| The deploy warns "IAP … outside of an Organization" | Harmless if the project is under KSE's organisation; access is still enforced (anonymous requests are redirected to Google sign-in) |
 | "You don't have access" after signing in | Step 3 not done, or signed in with a non-KSE account |
 | Site shows data but `/api/health` has a `lastError` | The service account lost access to the folders/table (see Live data, step 3) |
 | Logs | `gcloud run services logs read kse-docs --region $REGION` |
