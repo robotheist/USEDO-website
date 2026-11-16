@@ -2,9 +2,21 @@
 // is a one-line change. Columns are located by HEADER TEXT, not by letter, so
 // inserting or reordering columns in the spreadsheets does not break anything.
 
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 const env = process.env;
 
-const hasGoogleCreds = Boolean(env.GOOGLE_APPLICATION_CREDENTIALS || env.GOOGLE_SERVICE_ACCOUNT_JSON);
+// Live mode is chosen automatically when any Google credentials are available:
+// a key (env vars), keyless gcloud login / impersonation (the ADC file), or
+// Google Cloud hosting such as Cloud Run (K_SERVICE is set there).
+const adcFile = env.APPDATA
+  ? join(env.APPDATA, "gcloud", "application_default_credentials.json")
+  : join(homedir(), ".config", "gcloud", "application_default_credentials.json");
+const hasGoogleCreds = Boolean(
+  env.GOOGLE_APPLICATION_CREDENTIALS || env.GOOGLE_SERVICE_ACCOUNT_JSON || env.K_SERVICE || existsSync(adcFile),
+);
 
 export const config = {
   port: Number(env.PORT || 3000),

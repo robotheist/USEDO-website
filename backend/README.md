@@ -20,18 +20,44 @@ npm start            # http://127.0.0.1:3000 — serves the API and the frontend
 npm test
 ```
 
-With no credentials it runs on `fixtures/` (a snapshot of the real data from 16.11.2026; writes stay in memory). For live data:
+With no Google credentials it runs on `fixtures/` (a snapshot of the real data from 16.11.2026; writes stay in memory).
 
-1. Google Cloud → create a project → enable **Google Drive API** and **Google Sheets API**.
-2. Create a **service account**, download its JSON key (keep it **outside** the repo).
-3. Add the service account's e-mail to the shared drive (Viewer is enough for folders) and give it **Editor** on «Звіт по документах».
-4. `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json ADMIN_TOKEN=<random> npm start`
+## Live data (no key files)
+
+The backend uses Google's Application Default Credentials, so it needs **no service-account key file**. (KSE's organisation policy blocks key creation anyway.)
+
+**One-time setup**
+
+1. Google Cloud Console → create a project → enable **Google Drive API** and **Google Sheets API**.
+2. *IAM & Admin → Service Accounts* → create a service account. Skip the optional role steps and **don't create a key**.
+3. In Drive, share with the service account's e-mail like with a person:
+   - the shared drive (or the «Документи» folder and the periods spreadsheet) — **Viewer**;
+   - «Звіт по документах» — **Editor** (needed to write statuses back).
+
+   If sharing outside the organisation's domain is restricted, a Drive admin has to allow it for this address.
+
+**Local run — impersonation.** Your own Google login acts as the service account, no key involved.
+
+1. On the service account → *Permissions* → grant **your own account** the role **Service Account Token Creator**.
+2. Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install) and run once:
+   ```bash
+   gcloud auth application-default login --impersonate-service-account=<service-account-email>
+   ```
+3. `npm start` — the log should say `loaded 9 blocks, … from "google"`.
+
+**Server — Google Cloud Run.** Deploy `backend/` to Cloud Run and set the service account as the service's identity; Google supplies credentials automatically. Set `ADMIN_TOKEN` (and `CORS_ORIGINS` if the frontend is hosted elsewhere) as environment variables. Cloud Run needs a billing account on the project; a service this size normally stays within the free tier.
+
+**Check:** `GET /api/health` → `"source": "google"` and `"lastError": null`. A `403`/permission error almost always means step 3 (sharing) is missing.
+
+Live mode is chosen automatically when credentials are found (gcloud login above, Cloud Run, or a key via env vars); force it with `DATA_SOURCE=google`.
+
+## Settings
 
 | Env var | Default | |
 |---|---|---|
 | `PORT` | `3000` | |
-| `DATA_SOURCE` | `google` if credentials set, else `fixtures` | |
-| `GOOGLE_APPLICATION_CREDENTIALS` / `GOOGLE_SERVICE_ACCOUNT_JSON` | — | key file path / inline JSON |
+| `DATA_SOURCE` | `google` if credentials are found, else `fixtures` | |
+| `GOOGLE_APPLICATION_CREDENTIALS` / `GOOGLE_SERVICE_ACCOUNT_JSON` | — | only if you do use a key file / inline key JSON |
 | `POLL_INTERVAL_MS` | `30000` | how fast table edits reach the site |
 | `ADMIN_TOKEN` | — | if set, writes need `Authorization: Bearer …` |
 | `CORS_ORIGINS` | `http://127.0.0.1:5180,http://localhost:5180` | for a separate frontend dev server |

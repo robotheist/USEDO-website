@@ -1,11 +1,8 @@
-// Live Google Drive + Sheets access through a service account.
-//
-// Setup: create a service account in Google Cloud, enable the Drive API and the
-// Sheets API, download its JSON key, and add the service account's e-mail as a
-// member of the shared drive (or share «Документи» + both spreadsheets with it).
-// It needs Viewer on the folders and Editor on «Звіт по документах» (to write
-// statuses back). Then set GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
-// (or GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}').
+// Live Google Drive + Sheets access as a service account, via Application
+// Default Credentials: gcloud impersonation locally, the attached identity on
+// Cloud Run, or (optionally) a key file. See backend/README.md → "Live data".
+// The service account needs Viewer on the folders and Editor on
+// «Звіт по документах» (to write statuses back).
 
 import { google } from "googleapis";
 import { quoteSheet } from "../parse.js";
