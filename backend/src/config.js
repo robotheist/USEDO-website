@@ -28,7 +28,8 @@ export const config = {
   pollIntervalMs: Number(env.POLL_INTERVAL_MS || 30_000),
 
   // If set, PATCH/POST endpoints require `Authorization: Bearer <ADMIN_TOKEN>`.
-  adminToken: env.ADMIN_TOKEN || "",
+  // Trimmed: secrets stored from a shell often carry a trailing newline.
+  adminToken: (env.ADMIN_TOKEN || "").trim(),
 
   // Comma-separated list of origins allowed to call the API from a browser.
   corsOrigins: (env.CORS_ORIGINS || "http://127.0.0.1:5180,http://localhost:5180")

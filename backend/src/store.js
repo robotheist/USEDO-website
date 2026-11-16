@@ -48,6 +48,7 @@ export class Store extends EventEmitter {
           const model = buildModel(raw, this.cfg, this.now());
           const hash = createHash("sha1").update(JSON.stringify(model)).digest("hex");
           this.lastError = null;
+          this._refreshedAt = this.now().getTime();
           if (hash !== this.hash) {
             this.hash = hash;
             this.version++;
@@ -66,8 +67,17 @@ export class Store extends EventEmitter {
     return this._inflight;
   }
 
+  // Returns the snapshot, re-reading first if it is older than the poll
+  // interval. The timer alone isn't enough on hosts that pause idle instances
+  // (Cloud Run): after a quiet spell the first request would get stale data.
+  // If that re-read fails, the last good snapshot is served.
   async get() {
-    return this.snapshot || this.refresh();
+    if (!this.snapshot) return this.refresh();
+    const maxAge = this.cfg.pollIntervalMs;
+    if (maxAge && this.now().getTime() - (this._refreshedAt || 0) > maxAge) {
+      try { return await this.refresh(); } catch { return this.snapshot; }
+    }
+    return this.snapshot;
   }
 
   start() {

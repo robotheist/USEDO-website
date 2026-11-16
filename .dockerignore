@@ -1,0 +1,7 @@
+.git
+**/node_modules
+backend/test
+.env
+*.key.json
+*service-account*.json
+credentials*.json

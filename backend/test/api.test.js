@@ -80,6 +80,25 @@ test("5. an edit made directly in the table shows up after the next poll, with a
   assert.equal(store.version, v0 + 1);
 });
 
+test("5a. a request after an idle spell re-reads stale data before answering (paused hosts)", async () => {
+  let clock = Date.parse("2026-11-16T10:00:00Z");
+  const src = createFixtureSource();
+  const s = new Store(src, { ...baseConfig, pollIntervalMs: 30_000 }, { now: () => new Date(clock) });
+  await s.refresh();
+  src._sheets[REPORT.spreadsheetId][REPORT.sheet][40][3] = "Оновлений"; // edited in the table; no poll ran
+  const status = (snap) => s.findDocument(snap, BUDGET).relevance.status;
+
+  clock += 10_000;
+  assert.equal(status(await s.get()), "outdated"); // still fresh enough → cached
+  clock += 25_000;
+  assert.equal(status(await s.get()), "up_to_date"); // older than the poll interval → re-read
+
+  src.getValues = async () => { throw new Error("Google down"); };
+  clock += 60_000;
+  assert.equal(status(await s.get()), "up_to_date"); // re-read fails → last good snapshot
+  assert.equal(s.lastError.message, "Google down");
+});
+
 test("5b. a new document folder in Drive appears on the next poll", async () => {
   source._drive.folders[HR].push({ id: "NEW", name: "Новий документ [Стихійний]" });
   await store.refresh();
