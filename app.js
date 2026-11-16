@@ -109,8 +109,14 @@
   // mode) or plain text, plus the free-text note from the table when it says
   // more than the name.
   const ownerControl = (d) => {
-    const note = d.ownerNote ? `<div class="doc-sub owner-note" title="${esc(d.ownerNote)}">${esc(d.ownerNote)}</div>` : "";
-    if (!LIVE) return (d.owner ? esc(d.owner) : '<span class="muted">—</span>') + note;
+    if (!LIVE) {
+      const note = d.ownerNote ? `<div class="doc-sub owner-note" title="${esc(d.ownerNote)}">${esc(d.ownerNote)}</div>` : "";
+      return (d.owner ? esc(d.owner) : '<span class="muted">—</span>') + note;
+    }
+    // Click the note (or "+ примітка") to edit it in place; see startNoteEdit.
+    const note = d.ownerNote
+      ? `<button type="button" class="doc-sub owner-note note-edit" data-action="edit-note" data-doc="${esc(d.id)}" title="${esc(d.ownerNote)} — натисніть, щоб змінити">${esc(d.ownerNote)}</button>`
+      : `<button type="button" class="note-add" data-action="edit-note" data-doc="${esc(d.id)}">+ примітка</button>`;
     const people = D.people || [];
     // A name typed into the table that isn't in the list still shows as selected.
     const options = d.owner && !people.includes(d.owner) ? [d.owner, ...people] : people;
@@ -446,8 +452,41 @@
       else document.body.classList.toggle("sidebar-hidden");
     } else if (a === "close-drawer") {
       document.body.classList.remove("drawer-open");
+    } else if (a === "edit-note") {
+      startNoteEdit(el);
     }
   });
+
+  // Turns a note into a text box. Enter or leaving the box saves (if changed),
+  // Esc cancels. It starts from the raw table text, which may be a note the
+  // page hides because it only repeats the person's name.
+  function startNoteEdit(btn) {
+    const d = D.documents.find((x) => x.id === btn.dataset.doc);
+    if (!d) return;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "note-input";
+    input.maxLength = 500;
+    input.placeholder = "Примітка: де/у кого взяти оновлення";
+    input.value = d.note || "";
+    input.dataset.doc = d.id;
+    input.dataset.expected = d.note || "";
+    btn.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = (save) => {
+      if (done) return;
+      done = true;
+      if (save && input.value.replace(/\s+/g, " ").trim() !== (d.note || "")) saveField(input, "note");
+      else render();
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", () => finish(true));
+  }
 
   document.addEventListener("input", (e) => {
     if (e.target.id === "section-search") {
@@ -507,6 +546,7 @@
       statusKey: d.relevance.status,
       owner: d.relevance.owner,
       ownerNote: d.relevance.ownerNote,
+      note: d.relevance.note,
       periodic: d.periodicity.periodic,
       period: d.periodicity.period,
       cycle: d.nextUpdate?.cycle || d.periodicity.period,
@@ -547,12 +587,13 @@
   const FIELD_TEXT = {
     status: { saved: "Статус збережено в таблиці «Звіт по документах»", conflict: "Статус уже змінили в таблиці — показано актуальне значення." },
     owner: { saved: "Відповідального збережено в таблиці «Звіт по документах»", conflict: "Відповідального вже змінили в таблиці — показано актуальне значення." },
+    note: { saved: "Примітку збережено в таблиці «Звіт по документах»", conflict: "Примітку вже змінили в таблиці — показано актуальне значення." },
   };
   async function saveField(sel, field, retried = false) {
     const id = sel.dataset.doc;
     const token = adminToken(retried);
-    // Status: "" means unknown, so don't send it. Owner: "" means "had no owner".
-    const expected = field === "owner" ? sel.dataset.expected : sel.dataset.expected || undefined;
+    // Status: "" means unknown, so don't send it. Owner/note: "" means "was empty".
+    const expected = field === "status" ? sel.dataset.expected || undefined : sel.dataset.expected;
     sel.disabled = true;
     try {
       const res = await fetch(`${API}/api/documents/${encodeURIComponent(id)}/${field}`, {
@@ -581,7 +622,7 @@
   // Server pushes `change` whenever the table, Drive or a status on the site changes.
   function subscribe() {
     if (!window.EventSource) return;
-    const EDITING = ".status-select, .owner-select, #owner-filter, #section-search";
+    const EDITING = ".status-select, .owner-select, .note-input, #owner-filter, #section-search";
     let pending = false;
     const reload = () => { pending = false; loadLive().then(render).catch(() => {}); };
     const es = new EventSource(`${API}/api/events`);

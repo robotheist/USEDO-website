@@ -6,7 +6,7 @@ Node.js API that reads the Drive folder tree and the two spreadsheets, computes 
 |---|---|
 | Drive `Документи/` | 9 blocks = subfolders; documents = their subfolders `Назва [Тип]` |
 | «Звіт по документах», column **Статус** | relevance status of each document (read **and written**) |
-| … column **Відповідальний** | responsible person (read **and written**); the column **У кого знайти оновлений** is shown as a free-text note |
+| … column **Відповідальний** | responsible person (read **and written**); the column **У кого знайти оновлений** is a free-text note (read **and written**) |
 | … tab **Відповідальні** | the list of people offered in the «Відповідальний» dropdown (one name per row; add people here) |
 | «Періоди оновлення документів КШЕ» → «Періоди оновлення» | period (`Щороку`, …) |
 | … → «Регулярні — строки» | next update window → parsed into a due date |
@@ -134,6 +134,7 @@ IDs, sheet names and header texts are in `src/config.js`.
 | `PATCH /api/documents/:id/status` | body `{"status": "up_to_date", "expected": "outdated"}` → writes the label into «Статус». `expected` is optional; on mismatch → `409` with `current` |
 | `GET /api/events` | Server-Sent Events: `change` `{version}` whenever anything changes |
 | `PATCH /api/documents/:id/owner` | body `{"owner": "Берзеніна", "expected": "Юдін"}` → writes the name into «Відповідальний». Only names from the «Відповідальні» tab are accepted (`""` clears); `expected` (the owner the page showed, `""` = none) is optional, mismatch → `409` with `current` |
+| `PATCH /api/documents/:id/note` | body `{"note": "free text", "expected": "<previous text>"}` → writes «У кого знайти оновлений». Line breaks/extra spaces are collapsed, `""` clears, max 500 characters; `expected` should be `relevance.note` (the raw text), mismatch → `409` with `current` |
 | `GET /api/people` | the names from the «Відповідальні» tab (also in `snapshot.people`) |
 | `GET /api/meta` · `/api/health` · `POST /api/refresh` | vocabularies · status · force re-read |
 
@@ -145,11 +146,11 @@ Document:
   "id": "1zZeb…", "name": "Бюджет закладу освіти", "url": "https://drive.google.com/drive/folders/1zZeb…",
   "updateType": { "key": "regular", "label": "Регулярний", "code": "R" },
   "periodicity": { "periodic": true, "period": "Щороку", "label": "periodic: Щороку" },   // or "non-periodic"
-  "relevance": { "upToDate": false, "status": "outdated", "statusLabel": "Застарілий", "owner": "Берзеніна", "ownerNote": null, "reportRow": 41 },
+  "relevance": { "upToDate": false, "status": "outdated", "statusLabel": "Застарілий", "owner": "Берзеніна", "ownerNote": null, "note": "Берзеніна", "reportRow": 41 },
   "nextUpdate": { "label": "Січень 2027", "due": "2027-01-31", "daysLeft": 76, "overdue": false, "cycle": "Щороку" }
 }
 ```
-`relevance.ownerNote` is the «У кого знайти оновлений» text when it says more than the owner's name (e.g. "Висновок + інформація від Яковенко"), otherwise `null`. If the sheet has no «Відповідальний» column, that text is used as `owner` (read-only) and a warning is reported.
+`relevance.ownerNote` is the «У кого знайти оновлений» text when it says more than the owner's name (e.g. "Висновок + інформація від Яковенко"), otherwise `null`; `relevance.note` is that cell exactly as in the table (what the site's note editor starts from). If the sheet has no «Відповідальний» column, that text is used as `owner` (read-only) and a warning is reported.
 
 `relevance.status`: `up_to_date` · `outdated` · `broken_link` · `missing` · `under_review` · `not_in_report` (no row in the table) · `unknown` (unrecognised text) · `not_set` (empty cell).
 `periodic` is true for `[Регулярний]` and `[Змішаний]`.

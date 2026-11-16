@@ -7,6 +7,8 @@ import { createHash } from "node:crypto";
 import { buildModel } from "./model.js";
 import { buildMatcher, columnLetter, normalizeName, readTable, resolveStatus, statusFromLabel } from "./parse.js";
 
+export const NOTE_MAX = 500;
+
 export class HttpError extends Error {
   constructor(status, message, extra) { super(message); this.status = status; this.extra = extra; }
 }
@@ -135,6 +137,23 @@ export class Store extends EventEmitter {
       current: (row) => (row ? row.get("owner").replace(/\s+/g, " ").trim() : ""),
       conflict: (current) => expected !== undefined && expected !== null && normalizeName(expected) !== normalizeName(current),
       what: "responsible person",
+    });
+  }
+
+  // Writes the free-text note («У кого знайти оновлений»). Line breaks and
+  // repeated spaces are collapsed; "" clears it; at most NOTE_MAX characters.
+  // `expected` (optional, the note text the client started editing from) → 409 on mismatch.
+  setNote(documentId, noteInput, { expected } = {}) {
+    const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+    return this._writeCell(documentId, "ownerNote", () => {
+      if (typeof noteInput !== "string") throw new HttpError(400, "note must be a string");
+      const note = clean(noteInput);
+      if (note.length > NOTE_MAX) throw new HttpError(400, `The note is longer than ${NOTE_MAX} characters`);
+      return note;
+    }, {
+      current: (row) => (row ? clean(row.get("ownerNote")) : ""),
+      conflict: (current) => expected !== undefined && expected !== null && clean(expected) !== current,
+      what: "note",
     });
   }
 

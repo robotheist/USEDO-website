@@ -44,7 +44,7 @@ test("1–3. nine blocks from Drive, each with a status; documents carry relevan
   assert.equal(finance.status, "needs_renewal");
   const budget = finance.documents.find((d) => d.id === BUDGET);
   assert.equal(budget.name, "Бюджет закладу освіти");
-  assert.deepEqual(budget.relevance, { upToDate: false, status: "outdated", statusLabel: "Застарілий", owner: "Берзеніна", ownerNote: null, action: null, reportRow: 41 });
+  assert.deepEqual(budget.relevance, { upToDate: false, status: "outdated", statusLabel: "Застарілий", owner: "Берзеніна", ownerNote: null, note: "Берзеніна", action: null, reportRow: 41 });
   assert.equal(budget.periodicity.periodic, true);
   assert.equal(budget.periodicity.label, "periodic: Щороку");
   assert.deepEqual(budget.nextUpdate, { label: "Січень 2027", due: "2027-01-31", daysLeft: 76, overdue: false, cycle: "Щороку" });
@@ -255,6 +255,55 @@ test("owner: older sheet without «Відповідальний» → note used 
   assert.equal(access.ownerNote, null);
   assert.deepEqual(snap.warnings.map((w) => w.code), ["owner_column_missing"]);
   await assert.rejects(s.setOwner(BUDGET, ""), (e) => e.status === 500 && /Відповідальний/.test(e.message));
+});
+
+// ---------- Note («У кого знайти оновлений») ----------
+
+const NOTE_COL = 5; // F
+
+test("note: PATCH writes the text into «У кого знайти оновлений» of the right row, collapsed; '' clears it", async () => {
+  const res = await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: "  Узяти  у фінвідділу\nпісля 15 січня " } });
+  assert.equal(res.status, 200);
+  const { document } = await res.json();
+  assert.equal(reportCell(41, NOTE_COL), "Узяти у фінвідділу після 15 січня");
+  assert.equal(document.relevance.ownerNote, "Узяти у фінвідділу після 15 січня");
+  assert.equal(document.relevance.note, "Узяти у фінвідділу після 15 січня");
+  assert.equal(reportCell(41, OWNER_COL), "Берзеніна"); // owner untouched
+  assert.equal(reportCell(40, NOTE_COL), "Загальний слайд від Дениса Щербака"); // neighbours untouched
+  assert.equal(reportCell(42, NOTE_COL), "Берзеніна");
+
+  const cleared = await (await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: "" } })).json();
+  assert.equal(reportCell(41, NOTE_COL), "");
+  assert.equal(cleared.document.relevance.note, null);
+});
+
+test("note: validation and conflicts", async () => {
+  assert.equal((await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: 5 } })).status, 400);
+  assert.equal((await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: {} })).status, 400);
+  assert.equal((await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: "x".repeat(501) } })).status, 400);
+  assert.equal((await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: "x".repeat(500) } })).status, 200);
+  assert.equal((await api("/api/documents/nope/note", { method: "PATCH", body: { note: "x" } })).status, 404);
+
+  // The note equal to the owner's name is hidden on the page, but `note` carries it, so the client can send it as expected.
+  source._sheets[REPORT.spreadsheetId][REPORT.sheet][40][NOTE_COL] = "Берзеніна";
+  await store.refresh();
+  const doc = (await (await api(`/api/documents/${BUDGET}`)).json()).document;
+  assert.equal(doc.relevance.ownerNote, null);
+  assert.equal(doc.relevance.note, "Берзеніна");
+  assert.equal((await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: "Новий текст", expected: doc.relevance.note } })).status, 200);
+
+  source._sheets[REPORT.spreadsheetId][REPORT.sheet][40][NOTE_COL] = "Змінили в таблиці";
+  const res = await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: "Мій текст", expected: "Новий текст" } });
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).current, "Змінили в таблиці");
+  assert.equal(reportCell(41, NOTE_COL), "Змінили в таблиці");
+});
+
+test("note: needs the admin token", async () => {
+  await new Promise((r) => server.close(r));
+  await start({ adminToken: "s3cret" });
+  assert.equal((await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: "x" } })).status, 401);
+  assert.equal((await api(`/api/documents/${BUDGET}/note`, { method: "PATCH", body: { note: "x" }, headers: { Authorization: "Bearer s3cret" } })).status, 200);
 });
 
 test("validation: unknown status → 400, unknown document → 404, bad JSON → 400", async () => {

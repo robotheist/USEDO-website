@@ -20,7 +20,7 @@ export function ownerOf(row, idx) {
   const note = row.get("ownerNote").replace(/\s+/g, " ").trim();
   const owner = idx.owner >= 0 ? row.get("owner").replace(/\s+/g, " ").trim() : note;
   const ownerNote = idx.owner >= 0 && note && normalizeName(note) !== normalizeName(owner) ? note : null;
-  return { owner: owner || null, ownerNote };
+  return { owner: owner || null, ownerNote, note: note || null };
 }
 
 const DRIVE_FOLDER = (id) => `https://drive.google.com/drive/folders/${id}`;
@@ -69,7 +69,7 @@ export function buildModel(raw, cfg, today = new Date()) {
       const status = statusFromLabel(rawStatus);
       if (rep && !status) warnings.push({ code: "unknown_status", documentId: folder.id, message: `Unrecognised status "${rawStatus}" for "${parsed.name}"` });
       const statusKey = !rep ? "not_in_report" : status ? status.key : rawStatus ? "unknown" : "not_set";
-      const { owner, ownerNote } = rep ? ownerOf(rep.row, report.idx) : { owner: null, ownerNote: null };
+      const { owner, ownerNote, note } = rep ? ownerOf(rep.row, report.idx) : { owner: null, ownerNote: null, note: null };
       if (owner && report.idx.owner >= 0 && people.length && !known.has(normalizeName(owner))) {
         warnings.push({ code: "owner_not_in_list", documentId: folder.id, message: `"${parsed.name}": «${owner}» is not in the «${cfg.people.sheet}» tab` });
       }
@@ -113,7 +113,8 @@ export function buildModel(raw, cfg, today = new Date()) {
           status: statusKey,
           statusLabel: rawStatus || null,
           owner,
-          ownerNote,
+          ownerNote, // note to display: null when it only repeats the owner's name
+          note, // the «У кого знайти оновлений» cell as it is (what editing starts from)
           action: rep ? rep.row.get("action") || null : null,
           reportRow: rep ? rep.row.rowNumber : null,
         },

@@ -96,6 +96,14 @@ export function createApp(store, cfg) {
     res.json({ version: snap.version, document: doc });
   }));
 
+  // Body: { "note": "free text" | "" (clear), "expected"?: "<note text the client started from>" }
+  app.patch("/api/documents/:id/note", requireAdmin, wrap(async (req, res) => {
+    const { note, expected } = req.body || {};
+    const doc = await store.setNote(req.params.id, note, { expected });
+    const snap = await store.get();
+    res.json({ version: snap.version, document: doc });
+  }));
+
   // People who can be set as responsible (the «Відповідальні» tab).
   app.get("/api/people", wrap(async (req, res) => {
     const snap = await store.get();
