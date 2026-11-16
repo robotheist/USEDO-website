@@ -88,6 +88,20 @@ export function createApp(store, cfg) {
     res.json({ version: snap.version, document: doc, section: section ? summary(section) : null });
   }));
 
+  // Body: { "owner": "Берзеніна" | "" (clear), "expected"?: "<owner the client last saw>" }
+  app.patch("/api/documents/:id/owner", requireAdmin, wrap(async (req, res) => {
+    const { owner, expected } = req.body || {};
+    const doc = await store.setOwner(req.params.id, owner, { expected });
+    const snap = await store.get();
+    res.json({ version: snap.version, document: doc });
+  }));
+
+  // People who can be set as responsible (the «Відповідальні» tab).
+  app.get("/api/people", wrap(async (req, res) => {
+    const snap = await store.get();
+    res.json({ version: snap.version, people: snap.people });
+  }));
+
   // Force an immediate re-read of Drive + Sheets (instead of waiting for the poll).
   app.post("/api/refresh", requireAdmin, wrap(async (req, res) => {
     const snap = await store.refresh();

@@ -48,9 +48,21 @@ export const config = {
     columns: {
       name: "Назва документу",
       status: "Статус",
-      owner: "У кого знайти оновлений",
+      // The responsible person only (dropdown from the «Відповідальні» tab).
+      owner: "Відповідальний",
+      // Free-text notes on where/how to get the update. Before the
+      // «Відповідальний» column existed this was the only owner field, so it
+      // is used as the owner when that column is missing.
+      ownerNote: "У кого знайти оновлений",
       action: "Рекомендована дія",
     },
+  },
+
+  // Tab with the list of people who can be responsible (one name per row).
+  people: {
+    spreadsheetId: env.REPORT_SPREADSHEET_ID || "15j921px4mPbQ0uVL1_bbc4HyBvSd2qnWwSo3hwcye18",
+    sheet: env.PEOPLE_SHEET || "Відповідальні",
+    columns: { name: "Відповідальний" },
   },
 
   // «Періоди оновлення документів КШЕ»

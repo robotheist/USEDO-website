@@ -105,6 +105,20 @@
     ? `<span class="badge soft s-ok"><span class="dot"></span>Актуальний</span>`
     : `<span class="badge soft s-broken"><span class="dot"></span>Потребує оновлення</span>`;
   // Editable status (live mode) or a plain badge (snapshot mode).
+  // Responsible person: a dropdown of people from the «Відповідальні» tab (live
+  // mode) or plain text, plus the free-text note from the table when it says
+  // more than the name.
+  const ownerControl = (d) => {
+    const note = d.ownerNote ? `<div class="doc-sub owner-note" title="${esc(d.ownerNote)}">${esc(d.ownerNote)}</div>` : "";
+    if (!LIVE) return (d.owner ? esc(d.owner) : '<span class="muted">—</span>') + note;
+    const people = D.people || [];
+    // A name typed into the table that isn't in the list still shows as selected.
+    const options = d.owner && !people.includes(d.owner) ? [d.owner, ...people] : people;
+    return `<select class="owner-select" data-doc="${esc(d.id)}" data-expected="${esc(d.owner || "")}" aria-label="Відповідальний">
+      <option value=""${d.owner ? "" : " selected"}>—</option>
+      ${options.map((n) => `<option value="${esc(n)}"${n === d.owner ? " selected" : ""}>${esc(n)}</option>`).join("")}
+    </select>${note}`;
+  };
   const statusControl = (d) => !LIVE ? statusBadge(d.status) : `
     <select class="status-select ${STATUS_CLS[d.status] || "s-unknown"}" data-doc="${esc(d.id)}" data-expected="${esc(d.statusKey)}" aria-label="Актуальність">
       ${EDITABLE.some(([k]) => k === d.statusKey) ? "" : `<option value="" selected disabled>${STATUS[d.status] || STATUS.unknown}</option>`}
@@ -241,7 +255,7 @@
   }
 
   // стан фільтрів сторінки розділу
-  const filters = { type: "all", q: "" };
+  const filters = { type: "all", q: "", owner: "all" };
 
   function pageSection(id) {
     const section = id === "all" ? { id: "all", name: "Усі документи", url: D.sources.root } : sectionById(id);
@@ -250,7 +264,18 @@
     const q = filters.q.trim().toLowerCase();
     const shown = all
       .filter((d) => filters.type === "all" || d.type === filters.type)
-      .filter((d) => !q || d.title.toLowerCase().includes(q) || (d.owner || "").toLowerCase().includes(q));
+      .filter((d) => filters.owner === "all" || (filters.owner === "none" ? !d.owner : d.owner === filters.owner))
+      .filter((d) => !q || d.title.toLowerCase().includes(q) || (d.owner || "").toLowerCase().includes(q) || (d.ownerNote || "").toLowerCase().includes(q));
+
+    // Owner filter: people who own something in this view, with counts.
+    const ownerCounts = new Map();
+    for (const d of all) if (d.owner) ownerCounts.set(d.owner, (ownerCounts.get(d.owner) || 0) + 1);
+    const noOwner = all.filter((d) => !d.owner).length;
+    const ownerFilter = `<label class="field owner-filter">${icon("users")}<select id="owner-filter" aria-label="Відповідальний">
+        <option value="all">Усі відповідальні</option>
+        ${[...ownerCounts].sort((a, b) => a[0].localeCompare(b[0], "uk")).map(([n, c]) => `<option value="${esc(n)}"${filters.owner === n ? " selected" : ""}>${esc(n)} (${c})</option>`).join("")}
+        ${noOwner ? `<option value="none"${filters.owner === "none" ? " selected" : ""}>Без відповідального (${noOwner})</option>` : ""}
+      </select></label>`;
 
     const tab = (key, label, n) =>
       `<button class="tab${filters.type === key ? " active" : ""}" data-action="filter-type" data-type="${key}">${label}<span class="n">${n}</span></button>`;
@@ -261,7 +286,7 @@
         <td class="cell-title"><div class="doc-title">${docLink(d)}</div>${id === "all" ? `<div class="doc-sub">${esc(sectionById(d.section).name)}</div>` : d.cycle ? `<div class="doc-sub">${esc(d.cycle)}</div>` : ""}</td>
         <td data-label="Тип">${typeBadge(d.type)}<div class="doc-sub">${periodLabel(d)}</div></td>
         <td data-label="Актуальність">${statusControl(d)}</td>
-        <td data-label="Відповідальний" class="nowrap">${d.owner ? esc(d.owner) : '<span class="muted">—</span>'}</td>
+        <td data-label="Відповідальний">${ownerControl(d)}</td>
         <td data-label="Наступне оновлення" class="nowrap">${
           st ? (d.due ? `${fmtDate(d.due)}<div class="doc-sub"><span class="badge soft ${st.cls}" style="min-height:20px;padding:0 8px">${st.text}</span></div>` : `<span class="muted">${esc(d.dueLabel || "Строк уточнюється")}</span>`)
              : `<span class="muted">${d.type === "S" ? "При зміні / події" : d.type === "M" ? "За потреби" : "—"}</span>`
@@ -285,7 +310,10 @@
             ${tab("all", "Усі", all.length)}
             ${TYPE_ORDER.map((t) => tab(t, TYPES[t].plural, all.filter((d) => d.type === t).length)).join("")}
           </div>
-          <label class="field">${icon("search")}<input id="section-search" type="search" placeholder="Пошук у розділі" value="${esc(filters.q)}" /></label>
+          <div class="toolbar-right">
+            ${ownerFilter}
+            <label class="field">${icon("search")}<input id="section-search" type="search" placeholder="Пошук у розділі" value="${esc(filters.q)}" /></label>
+          </div>
         </div>
         <div class="table-wrap" style="margin-top:8px">
           ${all.length === 0
@@ -378,6 +406,7 @@
     if (key !== lastRouteKey) {
       filters.type = "all";
       filters.q = "";
+      filters.owner = "all";
       lastRouteKey = key;
       window.scrollTo(0, 0);
     }
@@ -436,6 +465,7 @@
     if (e.key === "Enter") {
       filters.q = globalSearch.value;
       filters.type = "all";
+      filters.owner = "all";
       lastRouteKey = "section:all";
       if (location.hash !== "#/section/all") location.hash = "#/section/all";
       else render();
@@ -476,13 +506,14 @@
       status: FROM_API[d.relevance.status] || "unknown",
       statusKey: d.relevance.status,
       owner: d.relevance.owner,
+      ownerNote: d.relevance.ownerNote,
       periodic: d.periodicity.periodic,
       period: d.periodicity.period,
       cycle: d.nextUpdate?.cycle || d.periodicity.period,
       due: d.nextUpdate?.due || null,
       dueLabel: d.nextUpdate?.label || null,
     })));
-    return { today: localISO(new Date()), sections, documents, sources: window.PORTAL_DATA.sources, version: snap.version };
+    return { today: localISO(new Date()), sections, documents, people: snap.people || [], sources: window.PORTAL_DATA.sources, version: snap.version };
   }
 
   async function loadLive() {
@@ -506,27 +537,34 @@
     let t = "";
     try { t = localStorage.getItem("kse-admin-token") || ""; } catch (e) {}
     if ((forceAsk || (writesRequireToken && !t))) {
-      t = window.prompt("Токен адміністратора для зміни статусів:") || "";
+      t = window.prompt("Токен адміністратора для внесення змін:") || "";
       try { localStorage.setItem("kse-admin-token", t); } catch (e) {}
     }
     return t;
   }
 
-  async function setStatus(sel, retried = false) {
+  // Saves a dropdown's value into the table. field: "status" | "owner".
+  const FIELD_TEXT = {
+    status: { saved: "Статус збережено в таблиці «Звіт по документах»", conflict: "Статус уже змінили в таблиці — показано актуальне значення." },
+    owner: { saved: "Відповідального збережено в таблиці «Звіт по документах»", conflict: "Відповідального вже змінили в таблиці — показано актуальне значення." },
+  };
+  async function saveField(sel, field, retried = false) {
     const id = sel.dataset.doc;
     const token = adminToken(retried);
+    // Status: "" means unknown, so don't send it. Owner: "" means "had no owner".
+    const expected = field === "owner" ? sel.dataset.expected : sel.dataset.expected || undefined;
     sel.disabled = true;
     try {
-      const res = await fetch(`${API}/api/documents/${encodeURIComponent(id)}/status`, {
+      const res = await fetch(`${API}/api/documents/${encodeURIComponent(id)}/${field}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ status: sel.value, expected: sel.dataset.expected || undefined }),
+        body: JSON.stringify({ [field]: sel.value, expected }),
       });
-      if (res.status === 401 && !retried) return setStatus(sel, true);
+      if (res.status === 401 && !retried) return saveField(sel, field, true);
       const body = await res.json().catch(() => ({}));
-      if (res.status === 409) toast("Статус уже змінили в таблиці — показано актуальне значення.");
+      if (res.status === 409) toast(FIELD_TEXT[field].conflict);
       else if (!res.ok) toast(`Не вдалося зберегти: ${body.error || res.status}`);
-      else toast("Статус збережено в таблиці «Звіт по документах»", "ok");
+      else toast(FIELD_TEXT[field].saved, "ok");
     } catch (err) {
       toast(`Не вдалося зберегти: ${err.message}`);
     }
@@ -535,13 +573,15 @@
   }
 
   document.addEventListener("change", (e) => {
-    if (e.target.matches?.(".status-select")) setStatus(e.target);
+    if (e.target.matches?.(".status-select")) saveField(e.target, "status");
+    else if (e.target.matches?.(".owner-select")) saveField(e.target, "owner");
+    else if (e.target.id === "owner-filter") { filters.owner = e.target.value; render(); }
   });
 
   // Server pushes `change` whenever the table, Drive or a status on the site changes.
   function subscribe() {
     if (!window.EventSource) return;
-    const EDITING = ".status-select, #section-search";
+    const EDITING = ".status-select, .owner-select, #owner-filter, #section-search";
     let pending = false;
     const reload = () => { pending = false; loadLive().then(render).catch(() => {}); };
     const es = new EventSource(`${API}/api/events`);

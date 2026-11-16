@@ -44,7 +44,7 @@ test("1–3. nine blocks from Drive, each with a status; documents carry relevan
   assert.equal(finance.status, "needs_renewal");
   const budget = finance.documents.find((d) => d.id === BUDGET);
   assert.equal(budget.name, "Бюджет закладу освіти");
-  assert.deepEqual(budget.relevance, { upToDate: false, status: "outdated", statusLabel: "Застарілий", owner: "Берзеніна", action: null, reportRow: 41 });
+  assert.deepEqual(budget.relevance, { upToDate: false, status: "outdated", statusLabel: "Застарілий", owner: "Берзеніна", ownerNote: null, action: null, reportRow: 41 });
   assert.equal(budget.periodicity.periodic, true);
   assert.equal(budget.periodicity.label, "periodic: Щороку");
   assert.deepEqual(budget.nextUpdate, { label: "Січень 2027", due: "2027-01-31", daysLeft: 76, overdue: false, cycle: "Щороку" });
@@ -171,6 +171,90 @@ test("6f. optimistic concurrency: expected status mismatch → 409, nothing writ
   assert.equal(res.status, 409);
   assert.equal((await res.json()).current, "under_review");
   assert.equal(reportCell(41), "На розгляді");
+});
+
+// ---------- Responsible person («Відповідальний») ----------
+
+const ACCESS = "1x5jqjz14wxwhGxj9ars7Heuat2uoYI8t"; // «Умови доступності…», row 22: note "Висновок + інформація від Яковенко"
+const OWNER_COL = 6; // G
+
+test("owner: snapshot has the people list, owner from «Відповідальний», note only when it adds something", async () => {
+  const snap = await (await api("/api/snapshot")).json();
+  assert.deepEqual(snap.people, ["Берзеніна", "Вячеслав", "Манилюк", "Пряміцин", "Рудик", "Сердюк", "Щербак", "Юдін", "Яковенко"]);
+  assert.deepEqual(await (await api("/api/people")).json(), { version: 1, people: snap.people });
+  const docs = snap.sections.flatMap((s) => s.documents);
+  const access = docs.find((d) => d.id === ACCESS).relevance;
+  assert.equal(access.owner, "Яковенко");
+  assert.equal(access.ownerNote, "Висновок + інформація від Яковенко");
+  const budget = docs.find((d) => d.id === BUDGET).relevance;
+  assert.equal(budget.owner, "Берзеніна");
+  assert.equal(budget.ownerNote, null); // note "Берзеніна" just repeats the name
+  const homepage = docs.find((d) => d.name.startsWith("Головна сторінка")).relevance;
+  assert.equal(homepage.owner, null);
+  assert.deepEqual(snap.warnings, []);
+});
+
+test("owner: PATCH writes the canonical name into column «Відповідальний» of the right row; '' clears it", async () => {
+  const res = await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: { owner: "  юдін " } });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).document.relevance.owner, "Юдін");
+  assert.equal(reportCell(41, OWNER_COL), "Юдін");
+  assert.equal(reportCell(41, 5), "Берзеніна"); // note column untouched
+  assert.equal(reportCell(40, OWNER_COL), "Щербак"); // neighbours untouched
+  assert.equal(reportCell(42, OWNER_COL), "Берзеніна");
+
+  const cleared = await (await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: { owner: "" } })).json();
+  assert.equal(reportCell(41, OWNER_COL), "");
+  assert.equal(cleared.document.relevance.owner, null);
+  assert.equal(cleared.document.relevance.ownerNote, "Берзеніна"); // now the note is informative
+});
+
+test("owner: only people from the list; conflicts → 409; unknown document → 404", async () => {
+  const bad = await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: { owner: "Хтось Новий" } });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).error, /Відповідальні/);
+  assert.equal((await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: { owner: 5 } })).status, 400);
+  assert.equal((await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: {} })).status, 400);
+  assert.equal((await api("/api/documents/nope/owner", { method: "PATCH", body: { owner: "Юдін" } })).status, 404);
+
+  source._sheets[REPORT.spreadsheetId][REPORT.sheet][40][OWNER_COL] = "Рудик"; // someone edited the table
+  const res = await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: { owner: "Юдін", expected: "Берзеніна" } });
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).current, "Рудик");
+  assert.equal(reportCell(41, OWNER_COL), "Рудик");
+  // expected is compared case- and space-insensitively
+  const ok = await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: { owner: "Юдін", expected: "рудик" } });
+  assert.equal(ok.status, 200);
+});
+
+test("owner: a document without a table row gets a row with the owner", async () => {
+  source._drive.folders[HR].push({ id: "NEW", name: "Новий документ [Стихійний]" });
+  await store.refresh();
+  assert.equal((await api("/api/documents/NEW/owner", { method: "PATCH", body: { owner: "Манилюк" } })).status, 200);
+  const last = source._sheets[REPORT.spreadsheetId][REPORT.sheet].at(-1);
+  assert.equal(last[0], "Новий документ");
+  assert.equal(last[OWNER_COL], "Манилюк");
+});
+
+test("owner: needs the admin token like status", async () => {
+  await new Promise((r) => server.close(r));
+  await start({ adminToken: "s3cret" });
+  assert.equal((await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: { owner: "Юдін" } })).status, 401);
+  assert.equal((await api(`/api/documents/${BUDGET}/owner`, { method: "PATCH", body: { owner: "Юдін" }, headers: { Authorization: "Bearer s3cret" } })).status, 200);
+});
+
+test("owner: older sheet without «Відповідальний» → note used as owner (read-only), no people tab is fine", async () => {
+  const sheets = JSON.parse(JSON.stringify(createFixtureSource()._sheets));
+  sheets[REPORT.spreadsheetId][REPORT.sheet].forEach((r) => r.splice(OWNER_COL, 1));
+  delete sheets[REPORT.spreadsheetId]["Відповідальні"];
+  const s = new Store(createFixtureSource({ sheets }), { ...baseConfig, pollIntervalMs: 0 });
+  const snap = await s.refresh();
+  assert.deepEqual(snap.people, []);
+  const access = s.findDocument(snap, ACCESS).relevance;
+  assert.equal(access.owner, "Висновок + інформація від Яковенко");
+  assert.equal(access.ownerNote, null);
+  assert.deepEqual(snap.warnings.map((w) => w.code), ["owner_column_missing"]);
+  await assert.rejects(s.setOwner(BUDGET, ""), (e) => e.status === 500 && /Відповідальний/.test(e.message));
 });
 
 test("validation: unknown status → 400, unknown document → 404, bad JSON → 400", async () => {

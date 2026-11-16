@@ -2,8 +2,26 @@
 // Pure function of its inputs — no I/O — so it is easy to test.
 
 import {
-  buildMatcher, cleanPeriod, parseDueDate, parseFolderName, readTable, statusFromLabel, UPDATE_TYPES,
+  buildMatcher, cleanPeriod, normalizeName, parseDueDate, parseFolderName, readTable, statusFromLabel, UPDATE_TYPES,
 } from "./parse.js";
+
+// Names from the «Відповідальні» tab, in sheet order, without blanks/duplicates.
+export function readPeople(values, cfg) {
+  const seen = new Set();
+  return readTable(values, cfg.people.columns).rows
+    .map((r) => r.get("name").replace(/\s+/g, " ").trim())
+    .filter((n) => n && !seen.has(normalizeName(n)) && seen.add(normalizeName(n)));
+}
+
+// Owner of a report row: the «Відповідальний» column; if the sheet doesn't
+// have it yet, the old free-text column. The note is the free-text column,
+// dropped when it only repeats the owner's name.
+export function ownerOf(row, idx) {
+  const note = row.get("ownerNote").replace(/\s+/g, " ").trim();
+  const owner = idx.owner >= 0 ? row.get("owner").replace(/\s+/g, " ").trim() : note;
+  const ownerNote = idx.owner >= 0 && note && normalizeName(note) !== normalizeName(owner) ? note : null;
+  return { owner: owner || null, ownerNote };
+}
 
 const DRIVE_FOLDER = (id) => `https://drive.google.com/drive/folders/${id}`;
 const DAY = 86_400_000;
@@ -26,6 +44,11 @@ export function buildModel(raw, cfg, today = new Date()) {
   if (report.idx.name < 0 || report.idx.status < 0) {
     throw new Error(`Report sheet is missing the "${cfg.report.columns.name}" or "${cfg.report.columns.status}" column`);
   }
+  if (report.idx.owner < 0) {
+    warnings.push({ code: "owner_column_missing", message: `Column "${cfg.report.columns.owner}" not found in «Звіт по документах»; using "${cfg.report.columns.ownerNote}" as the owner (read-only)` });
+  }
+  const people = readPeople(raw.people || [], cfg);
+  const known = new Set(people.map(normalizeName));
 
   const matchReport = buildMatcher(report.rows, (r) => r.get("name"));
   const matchPeriod = buildMatcher(periods.rows, (r) => r.get("name"));
@@ -46,6 +69,10 @@ export function buildModel(raw, cfg, today = new Date()) {
       const status = statusFromLabel(rawStatus);
       if (rep && !status) warnings.push({ code: "unknown_status", documentId: folder.id, message: `Unrecognised status "${rawStatus}" for "${parsed.name}"` });
       const statusKey = !rep ? "not_in_report" : status ? status.key : rawStatus ? "unknown" : "not_set";
+      const { owner, ownerNote } = rep ? ownerOf(rep.row, report.idx) : { owner: null, ownerNote: null };
+      if (owner && report.idx.owner >= 0 && people.length && !known.has(normalizeName(owner))) {
+        warnings.push({ code: "owner_not_in_list", documentId: folder.id, message: `"${parsed.name}": «${owner}» is not in the «${cfg.people.sheet}» tab` });
+      }
 
       // --- periodicity (type from the folder name, period from «Періоди оновлення») ---
       const per = matchPeriod(parsed.name);
@@ -85,7 +112,8 @@ export function buildModel(raw, cfg, today = new Date()) {
           upToDate: statusKey === "up_to_date",
           status: statusKey,
           statusLabel: rawStatus || null,
-          owner: rep ? rep.row.get("owner") || null : null,
+          owner,
+          ownerNote,
           action: rep ? rep.row.get("action") || null : null,
           reportRow: rep ? rep.row.rowNumber : null,
         },
@@ -124,5 +152,5 @@ export function buildModel(raw, cfg, today = new Date()) {
     }
   }
 
-  return { sections, warnings };
+  return { sections, people, warnings };
 }
