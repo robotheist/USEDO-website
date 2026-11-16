@@ -336,3 +336,26 @@ tbody tr:hover { background: color-mix(in oklab, var(--base-200) 40%, transparen
   table.responsive td[data-label]::before { content: attr(data-label) ": "; color: var(--ink-50); font-size: 12px; }
   table.responsive td.cell-title::before { content: none; }
 }
+
+/* backend integration: document links, editable status, toast */
+.doc-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in oklab, currentColor 30%, transparent); text-underline-offset: 3px; }
+.doc-link:hover { color: var(--primary); text-decoration-color: currentColor; }
+.list-row .doc-link { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-select {
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  min-height: 24px; padding: 2px 26px 2px 11px; border-radius: var(--radius);
+  border: 1px solid color-mix(in oklab, var(--c) 25%, var(--base-100));
+  font: 500 12px/15px var(--font-body); color: var(--c);
+  background: color-mix(in oklab, var(--c) 10%, var(--base-100))
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center / 12px;
+}
+.status-select:disabled { opacity: .6; cursor: progress; }
+.status-select option { color: var(--ink); background: var(--base-100); }
+.toast {
+  position: fixed; right: 16px; bottom: 16px; z-index: 100; max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 14px; border-radius: var(--radius); font-size: 14px;
+  color: var(--base-100); background: var(--error); box-shadow: 0 6px 24px rgb(0 0 0 / .18);
+  transition: opacity .3s;
+}
+.toast.ok { background: var(--success); }
+.toast.hide { opacity: 0; pointer-events: none; }
