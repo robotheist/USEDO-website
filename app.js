@@ -1,5 +1,9 @@
 (() => {
-  const D = window.PORTAL_DATA;
+  let D = window.PORTAL_DATA;
+  // Backend API (see backend/README.md). Same origin by default; override with ?api=http://127.0.0.1:3000
+  const API = (new URLSearchParams(location.search).get("api") ?? window.PORTAL_API ?? "").replace(/\/$/, "");
+  let LIVE = false; // true once data came from the API — enables status editing
+  let writesRequireToken = false;
   const app = document.getElementById("app");
   const nav = document.getElementById("sidebar-nav");
   const crumbs = document.getElementById("crumbs");
@@ -17,8 +21,16 @@
     ok: "Оновлений",
     stale: "Застарілий",
     broken: "Посилання не працює",
+    missing: "Відсутній",
+    under_review: "На розгляді",
+    not_in_report: "Немає у звіті",
     unknown: "Не перевірено",
   };
+  const STATUS_CLS = { ok: "s-ok", stale: "s-stale", broken: "s-broken", missing: "s-broken", under_review: "s-stale", not_in_report: "s-unknown", unknown: "s-unknown" };
+  // API status keys → keys used in this file
+  const FROM_API = { up_to_date: "ok", outdated: "stale", broken_link: "broken", missing: "missing", under_review: "under_review", not_in_report: "not_in_report" };
+  // Status options for the dropdown: [API key, label]
+  const EDITABLE = [["up_to_date", "Оновлений"], ["outdated", "Застарілий"], ["broken_link", "Посилання не працює"], ["missing", "Відсутній"], ["under_review", "На розгляді"]];
   const MONTHS = ["січ", "лют", "бер", "квіт", "трав", "черв", "лип", "серп", "вер", "жовт", "лист", "груд"];
   const SOON_DAYS = 90;
 
@@ -47,7 +59,7 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   // ---------- Дати ----------
-  const today = new Date(D.today + "T00:00:00");
+  let today = new Date(D.today + "T00:00:00");
   const daysLeft = (iso) => (iso ? Math.round((new Date(iso + "T00:00:00") - today) / 86400000) : null);
   const fmtDate = (iso) => {
     if (!iso) return "—";
@@ -78,7 +90,26 @@
 
   // ---------- Компоненти ----------
   const typeBadge = (t) => `<span class="badge soft t-${t}">${TYPES[t].name}</span>`;
-  const statusBadge = (s) => `<span class="badge soft s-${s}"><span class="dot"></span>${STATUS[s]}</span>`;
+  const statusBadge = (s) => `<span class="badge soft ${STATUS_CLS[s] || "s-unknown"}"><span class="dot"></span>${STATUS[s] || STATUS.unknown}</span>`;
+  // Document name as a link to its Drive folder.
+  const docLink = (d, cls = "") =>
+    `<a class="doc-link ${cls}" href="${esc(d.url)}" target="_blank" rel="noopener" title="${esc(d.title)}">${esc(d.title)}</a>`;
+  // "Періодичний: Щороку" / "Неперіодичний"
+  const periodLabel = (d) => {
+    const periodic = d.periodic ?? (d.type === "R" || d.type === "M");
+    return periodic ? `Періодичний: ${esc(d.period || d.cycle || "період не вказано")}` : "Неперіодичний";
+  };
+  // Block status: up to date only if every applicable document is.
+  const blockStatus = (s) => s.status || (docsIn(s.id).filter((d) => d.type !== "N").every((d) => d.status === "ok") ? "up_to_date" : "needs_renewal");
+  const blockBadge = (s) => blockStatus(s) === "up_to_date"
+    ? `<span class="badge soft s-ok"><span class="dot"></span>Актуальний</span>`
+    : `<span class="badge soft s-broken"><span class="dot"></span>Потребує оновлення</span>`;
+  // Editable status (live mode) or a plain badge (snapshot mode).
+  const statusControl = (d) => !LIVE ? statusBadge(d.status) : `
+    <select class="status-select ${STATUS_CLS[d.status] || "s-unknown"}" data-doc="${esc(d.id)}" data-expected="${esc(d.statusKey)}" aria-label="Актуальність">
+      ${EDITABLE.some(([k]) => k === d.statusKey) ? "" : `<option value="" selected disabled>${STATUS[d.status] || STATUS.unknown}</option>`}
+      ${EDITABLE.map(([k, label]) => `<option value="${k}"${k === d.statusKey ? " selected" : ""}>${label}</option>`).join("")}
+    </select>`;
   const sectionById = (id) => D.sections.find((s) => s.id === id);
   const docsIn = (id) => (id === "all" ? D.documents : D.documents.filter((d) => d.section === id));
   const urgentDocs = () => D.documents.filter(needsUpdate);
@@ -175,7 +206,8 @@
                     <div><h3>${esc(s.name)}</h3><p class="meta">${sd.length} ${plural(sd.length, "документ", "документи", "документів")}${r ? ` · ${r} регул.` : ""}</p></div>
                   </div>
                   ${mixBar(sd)}
-                  ${u ? `<span class="badge soft d-overdue" style="align-self:flex-start">${u} ${plural(u, "потребує", "потребують", "потребують")} оновлення</span>` : ""}
+                  <span style="align-self:flex-start">${blockBadge(s)}</span>
+                  ${u ?`<span class="badge soft d-overdue" style="align-self:flex-start">${u} ${plural(u, "потребує", "потребують", "потребують")} оновлення</span>` : ""}
                 </a>`;
             }).join("")}
           </div>
@@ -188,7 +220,7 @@
               ${upcoming.map((d) => {
                 const st = deadlineState(d);
                 return `<div class="list-row">
-                  <div class="grow"><p title="${esc(d.title)}">${esc(d.title)}</p><span class="doc-sub">${esc(sectionById(d.section).name)} · ${fmtDate(d.due)}</span></div>
+                  <div class="grow"><p>${docLink(d)}</p><span class="doc-sub">${esc(sectionById(d.section).name)} · ${fmtDate(d.due)}</span></div>
                   <span class="badge soft ${st.cls}">${st.d}&nbsp;дн.</span>
                 </div>`;
               }).join("")}
@@ -199,7 +231,7 @@
             <div class="card-title">Проблеми з публікацією <span class="badge soft s-stale">${problems.length}</span></div>
             <div class="list">
               ${problems.slice(0, 6).map((d) => `<div class="list-row">
-                <div class="grow"><p title="${esc(d.title)}">${esc(d.title)}</p><span class="doc-sub">${d.owner ? "Відповідальний: " + esc(d.owner) : esc(sectionById(d.section).name)}</span></div>
+                <div class="grow"><p>${docLink(d)}</p><span class="doc-sub">${d.owner ? "Відповідальний: " + esc(d.owner) : esc(sectionById(d.section).name)}</span></div>
                 ${statusBadge(d.status)}
               </div>`).join("")}
             </div>
@@ -226,9 +258,9 @@
     const rows = shown.map((d) => {
       const st = d.type === "R" ? deadlineState(d) : null;
       return `<tr>
-        <td class="cell-title"><div class="doc-title">${esc(d.title)}</div>${id === "all" ? `<div class="doc-sub">${esc(sectionById(d.section).name)}</div>` : d.cycle ? `<div class="doc-sub">${esc(d.cycle)}</div>` : ""}</td>
-        <td data-label="Тип">${typeBadge(d.type)}</td>
-        <td data-label="Актуальність">${statusBadge(d.status)}</td>
+        <td class="cell-title"><div class="doc-title">${docLink(d)}</div>${id === "all" ? `<div class="doc-sub">${esc(sectionById(d.section).name)}</div>` : d.cycle ? `<div class="doc-sub">${esc(d.cycle)}</div>` : ""}</td>
+        <td data-label="Тип">${typeBadge(d.type)}<div class="doc-sub">${periodLabel(d)}</div></td>
+        <td data-label="Актуальність">${statusControl(d)}</td>
         <td data-label="Відповідальний" class="nowrap">${d.owner ? esc(d.owner) : '<span class="muted">—</span>'}</td>
         <td data-label="Наступне оновлення" class="nowrap">${
           st ? (d.due ? `${fmtDate(d.due)}<div class="doc-sub"><span class="badge soft ${st.cls}" style="min-height:20px;padding:0 8px">${st.text}</span></div>` : `<span class="muted">${esc(d.dueLabel || "Строк уточнюється")}</span>`)
@@ -241,7 +273,7 @@
     return `
       <div class="card"><div class="card-body page-head">
         <div>
-          <h1 class="page-title">${esc(section.name)}</h1>
+          <h1 class="page-title">${esc(section.name)} ${id === "all" ? "" : blockBadge(section)}</h1>
           <p class="page-sub">${all.length} ${plural(all.length, "документ", "документи", "документів")} · ${all.filter(needsUpdate).length} ${plural(all.filter(needsUpdate).length, "потребує", "потребують", "потребують")} оновлення</p>
         </div>
         <a class="link-btn" href="${section.url}" target="_blank" rel="noopener">${icon("external")}Папка в Drive</a>
@@ -280,7 +312,7 @@
     const row = (d) => {
       const st = deadlineState(d);
       return `<tr>
-        <td class="cell-title"><div class="doc-title">${esc(d.title)}</div><div class="doc-sub">${esc(sectionById(d.section).name)}</div></td>
+        <td class="cell-title"><div class="doc-title">${docLink(d)}</div><div class="doc-sub">${esc(sectionById(d.section).name)}</div></td>
         <td data-label="Цикл" class="nowrap">${esc(d.cycle || "—")}</td>
         <td data-label="Строк">${d.due ? `<b style="font-weight:500">${fmtDate(d.due)}</b>` : ""}<div class="doc-sub">${esc(d.dueLabel || "Строк не вказано в таблиці періодів")}</div></td>
         <td data-label="Залишилось"><span class="badge soft ${st.cls}">${st.text}</span></td>
@@ -420,6 +452,115 @@
     if (e.key === "Escape") document.body.classList.remove("drawer-open");
   });
 
+  // ---------- Живі дані з бекенду ----------
+  const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  // Converts /api/snapshot into the PORTAL_DATA shape used by this file.
+  function fromSnapshot(snap) {
+    const oldSections = window.PORTAL_DATA.sections;
+    const sections = snap.sections.map((s) => ({
+      id: s.slug,
+      name: s.name,
+      icon: oldSections.find((o) => o.id === s.slug)?.icon || "files",
+      folder: s.id,
+      url: s.url,
+      status: s.status,
+      counts: s.counts,
+    }));
+    const documents = snap.sections.flatMap((s) => s.documents.map((d) => ({
+      id: d.id,
+      section: s.slug,
+      type: d.updateType?.code || "S",
+      title: d.name,
+      url: d.url,
+      status: FROM_API[d.relevance.status] || "unknown",
+      statusKey: d.relevance.status,
+      owner: d.relevance.owner,
+      periodic: d.periodicity.periodic,
+      period: d.periodicity.period,
+      cycle: d.nextUpdate?.cycle || d.periodicity.period,
+      due: d.nextUpdate?.due || null,
+      dueLabel: d.nextUpdate?.label || null,
+    })));
+    return { today: localISO(new Date()), sections, documents, sources: window.PORTAL_DATA.sources, version: snap.version };
+  }
+
+  async function loadLive() {
+    const res = await fetch(`${API}/api/snapshot`, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    D = fromSnapshot(await res.json());
+    today = new Date(D.today + "T00:00:00");
+    LIVE = true;
+  }
+
+  function toast(msg, kind = "error") {
+    let el = document.getElementById("toast");
+    if (!el) { el = document.createElement("div"); el.id = "toast"; document.body.appendChild(el); }
+    el.className = `toast ${kind}`;
+    el.textContent = msg;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.add("hide"), 4000);
+  }
+
+  function adminToken(forceAsk) {
+    let t = "";
+    try { t = localStorage.getItem("kse-admin-token") || ""; } catch (e) {}
+    if ((forceAsk || (writesRequireToken && !t))) {
+      t = window.prompt("Токен адміністратора для зміни статусів:") || "";
+      try { localStorage.setItem("kse-admin-token", t); } catch (e) {}
+    }
+    return t;
+  }
+
+  async function setStatus(sel, retried = false) {
+    const id = sel.dataset.doc;
+    const token = adminToken(retried);
+    sel.disabled = true;
+    try {
+      const res = await fetch(`${API}/api/documents/${encodeURIComponent(id)}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ status: sel.value, expected: sel.dataset.expected || undefined }),
+      });
+      if (res.status === 401 && !retried) return setStatus(sel, true);
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 409) toast("Статус уже змінили в таблиці — показано актуальне значення.");
+      else if (!res.ok) toast(`Не вдалося зберегти: ${body.error || res.status}`);
+      else toast("Статус збережено в таблиці «Звіт по документах»", "ok");
+    } catch (err) {
+      toast(`Не вдалося зберегти: ${err.message}`);
+    }
+    await loadLive().catch(() => {});
+    render();
+  }
+
+  document.addEventListener("change", (e) => {
+    if (e.target.matches?.(".status-select")) setStatus(e.target);
+  });
+
+  // Server pushes `change` whenever the table, Drive or a status on the site changes.
+  function subscribe() {
+    if (!window.EventSource) return;
+    const EDITING = ".status-select, #section-search";
+    let pending = false;
+    const reload = () => { pending = false; loadLive().then(render).catch(() => {}); };
+    const es = new EventSource(`${API}/api/events`);
+    es.addEventListener("change", (e) => {
+      const { version } = JSON.parse(e.data || "{}");
+      if (version === D.version) return;
+      // Don't re-render under the user's cursor; apply once they leave the field.
+      if (document.activeElement?.matches?.(EDITING)) pending = true;
+      else reload();
+    });
+    document.addEventListener("focusout", (e) => {
+      if (pending && e.target.matches?.(EDITING)) setTimeout(() => { if (pending && !document.activeElement?.matches?.(EDITING)) reload(); }, 0);
+    });
+  }
+
   window.addEventListener("hashchange", render);
-  render();
+  loadLive()
+    .then(() => fetch(`${API}/api/health`).then((r) => r.json()).then((h) => { writesRequireToken = !!h.writesRequireToken; }).catch(() => {}))
+    .then(subscribe)
+    .catch((err) => console.info(`[KSE] бекенд недоступний (${err.message}) — показано знімок з data.js`))
+    .finally(render);
 })();
