@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="uk" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Документи | KSE Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    try { const t = localStorage.getItem("kse-docs-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="layout">
+    <div class="scrim" data-action="close-drawer"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <a class="sidebar-logo" href="#/">
+        <img src="kse-logo.svg" alt="Kyiv School of Economics" />
+      </a>
+
+      <label class="sidebar-search">
+        <svg viewBox="0 0 24 24" class="i"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="global-search" type="search" placeholder="Знайти документ..." autocomplete="off" />
+        <kbd>⌘K</kbd>
+      </label>
+
+      <nav class="sidebar-nav" id="sidebar-nav"></nav>
+
+      <div class="sidebar-user">
+        <span class="avatar">КШЕ</span>
+        <div class="who">
+          <p class="who-name">Співробітник КШЕ</p>
+          <p class="who-sub">ЄДЕБО та Ліцензування</p>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main-col">
+      <header class="topbar">
+        <button class="icon-btn burger" data-action="toggle-drawer" aria-label="Меню">
+          <svg viewBox="0 0 24 24" class="i"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <div class="crumbs" id="crumbs"></div>
+        <div class="topbar-right">
+          <span class="lang"><span class="flag"></span>UA</span>
+          <button class="icon-btn" data-action="toggle-theme" aria-label="Змінити тему">
+            <svg viewBox="0 0 24 24" class="i"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+          </button>
+          <span class="profile">
+            <span class="avatar sm">КШЕ</span>
+            <span class="profile-text"><b>Співробітник</b><small>Профіль</small></span>
+          </span>
+        </div>
+      </header>
+
+      <main class="content" id="app"></main>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
