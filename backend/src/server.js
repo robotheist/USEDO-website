@@ -20,7 +20,7 @@ try {
 store.start();
 
 if (!config.adminToken) console.warn("[auth] ADMIN_TOKEN is not set — anyone who can reach the API can change statuses.");
-if (source.name === "fixtures") console.warn("[data] using local fixtures; set GOOGLE_APPLICATION_CREDENTIALS for live data.");
+if (source.name === "fixtures") console.warn("[data] using local fixtures; for live data see backend/README.md → \"Live data\".");
 
 createApp(store, config).listen(config.port, () => {
   console.log(`[http] http://127.0.0.1:${config.port}`);
