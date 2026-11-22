@@ -86,15 +86,31 @@
           <label class="field">${icon("search")}<input id="section-search" type="search" placeholder="Пошук документа..." value="${esc(query)}" autocomplete="off" /></label>
           ${q ? `<span class="muted small">Знайдено: ${shown.length}</span>` : ""}
         </div>
-        ${shown.length ? `<ul class="file-list">
-          ${shown.map((d) => `
-            <li><a class="file-row" href="${esc(d.url)}" target="_blank" rel="noopener">
-              <span class="file-icon">${icon("file")}</span>
-              <span class="file-name">${esc(d.title)}${id === "all" ? `<small>${esc(sectionById(d.section).name)}</small>` : ""}</span>
-              <span class="file-open">Відкрити${icon("external")}</span>
-            </a></li>`).join("")}
-        </ul>` : `<div class="empty"><b>Нічого не знайдено</b>Спробуйте інший запит.</div>`}
+        ${shown.length ? fileLists(id, shown) : `<div class="empty"><b>Нічого не знайдено</b>Спробуйте інший запит.</div>`}
       </section>`;
+  }
+
+  const fileRow = (d, showWhere) => `
+    <li><a class="file-row" href="${esc(d.url)}" target="_blank" rel="noopener">
+      <span class="file-icon">${icon("file")}</span>
+      <span class="file-name">${esc(d.title)}${showWhere ? `<small>${esc([sectionById(d.section).name, d.group].filter(Boolean).join(" · "))}</small>` : ""}</span>
+      <span class="file-open">Відкрити${icon("external")}</span>
+    </a></li>`;
+
+  // Документи розділу, а під ними групи (папки з папками в Drive) із заголовками.
+  function fileLists(id, shown) {
+    if (id === "all") return `<ul class="file-list">${shown.map((d) => fileRow(d, true)).join("")}</ul>`;
+    const section = sectionById(id);
+    const loose = shown.filter((d) => !d.group);
+    return (loose.length ? `<ul class="file-list">${loose.map((d) => fileRow(d)).join("")}</ul>` : "") +
+      section.groups.map((g) => {
+        const docs = shown.filter((d) => d.group === g.name);
+        return docs.length ? `
+          <div class="file-group">
+            <a class="file-group-head" href="${esc(g.url)}" target="_blank" rel="noopener">${icon("folder")}${esc(g.name)}<span class="muted">${docs.length}</span></a>
+            <ul class="file-list">${docs.map((d) => fileRow(d)).join("")}</ul>
+          </div>` : "";
+      }).join("");
   }
 
   const pageMissing = () => `<div class="card empty"><b>Розділ не знайдено</b><a href="#/">Повернутися до огляду</a></div>`;

@@ -269,3 +269,11 @@ kbd {
   .file-open span, .file-open { font-size: 0; gap: 0; }
   .file-open .i { width: 16px; height: 16px; }
 }
+
+/* групи документів (папки з папками в Drive) */
+.file-group { border-top: 1px solid var(--line); padding-top: 6px; }
+.file-group-head { display: flex; align-items: center; gap: 8px; padding: 10px 20px 4px; font: 600 15px/22px var(--font-display); }
+.file-group-head .i { color: var(--kse-blue); }
+[data-theme="dark"] .file-group-head .i { color: var(--primary); }
+.file-group-head .muted { font: 500 13px var(--font-body); }
+.file-group-head:hover { color: var(--kse-blue); }
