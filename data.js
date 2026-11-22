@@ -1,4 +1,5 @@
-// Публічна версія: розділи, групи й документи з посиланнями на Google Drive.
+// Публічна версія: знімок Drive, яким сайт користується, поки бекенд недоступний.
+// Коли сайт працює через backend (npm run start:public), розділи й документи йдуть наживо з Drive.
 // Джерело: Процеси → ЄДЕБО та Ліцензування → Оновлення публічної інформації → Документи (знімок 23.11.2026).
 // Розділ = папка в «Документи». Документ = папка всередині розділу.
 // Група = папка, у якій лежать інші папки (наприклад «Протидія булінгу»): її документи показано під заголовком.
@@ -145,7 +146,7 @@ window.PORTAL_DATA = (() => {
 
   const documents = [];
   const out = sections.map(({ items, ...s }) => {
-    const doc = (title, id, group) => { const d = { id: "d" + (documents.length + 1), section: s.id, group, title, url: folder(id) }; documents.push(d); return d; };
+    const doc = (title, id, group) => { const d = { id: "d" + (documents.length + 1), section: s.id, group, title, url: folder(id), files: [] }; documents.push(d); return d; };
     const docs = [], groups = [];
     for (const [title, id, children] of items) {
       if (children) groups.push({ name: title, url: folder(id), docs: children.map(([t, cid]) => doc(t, cid, title)) });
@@ -154,5 +155,9 @@ window.PORTAL_DATA = (() => {
     return { ...s, url: folder(s.folder), docs, groups };
   });
 
-  return { sections: out, documents, root: folder("1awFZGigqGekfTfcXr-9xR_Akbq0k9wCj") };
+  // Опис і фото розділів за id папки: бекенд (/api/public/tree) дає лише назви з Drive,
+  // а оформлення береться звідси. Новий розділ без запису тут отримує градієнт.
+  const meta = Object.fromEntries(sections.map((s) => [s.folder, { slug: s.id, about: s.about, photo: s.photo }]));
+
+  return { sections: out, documents, meta, root: folder("1awFZGigqGekfTfcXr-9xR_Akbq0k9wCj"), source: "snapshot" };
 })();

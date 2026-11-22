@@ -277,3 +277,12 @@ kbd {
 [data-theme="dark"] .file-group-head .i { color: var(--primary); }
 .file-group-head .muted { font: 500 13px var(--font-body); }
 .file-group-head:hover { color: var(--kse-blue); }
+
+/* файли всередині папки документа (з Drive наживо) */
+.file-sub { list-style: none; margin: -4px 0 6px; padding: 0 12px 0 64px; display: flex; flex-direction: column; gap: 2px; }
+.file-sub a { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 10px; font-size: 13px; color: var(--kse-blue); }
+[data-theme="dark"] .file-sub a { color: var(--primary); }
+.file-sub a:hover { background: var(--base-200); }
+.file-sub .i { width: 14px; height: 14px; }
+.file-sub span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 560px) { .file-sub { padding-left: 24px; } }

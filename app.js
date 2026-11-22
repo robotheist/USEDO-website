@@ -1,6 +1,9 @@
 // Публічна версія: Огляд (картки розділів) → розділ (список файлів) → Google Drive.
 (() => {
-  const D = window.PORTAL_DATA;
+  let D = window.PORTAL_DATA;
+  // Бекенд (backend/src/public-server.js) віддає дерево папок з Drive наживо.
+  // Той самий origin за замовчуванням; інший — через ?api=http://127.0.0.1:3000
+  const API = (new URLSearchParams(location.search).get("api") ?? window.PORTAL_API ?? "").replace(/\/$/, "");
   const app = document.getElementById("app");
   const nav = document.getElementById("sidebar-nav");
   const crumbs = document.getElementById("crumbs");
@@ -56,7 +59,7 @@
           <a class="program-card" href="#/section/${s.id}">
             ${cover(s, "program-photo")}
             <h2 class="program-title">${esc(s.name)}</h2>
-            <p class="program-text">${esc(s.about)}</p>
+            <p class="program-text">${esc(s.about || docsWord(docsIn(s.id).length))}</p>
             <span class="program-btn">Детальніше</span>
           </a>`).join("")}
       </div>`;
@@ -69,7 +72,7 @@
     if (!section) return pageMissing();
     const all = docsIn(id);
     const q = query.trim().toLowerCase();
-    const shown = q ? all.filter((d) => d.title.toLowerCase().includes(q)) : all;
+    const shown = q ? all.filter((d) => d.title.toLowerCase().includes(q) || d.files.some((f) => f.name.toLowerCase().includes(q))) : all;
 
     return `
       <a class="back-link" href="#/">${icon("back")}Усі розділи</a>
@@ -77,7 +80,7 @@
         ${id === "all" ? "" : cover(section, "section-photo")}
         <div class="section-info">
           <h1 class="page-title">${esc(section.name)}</h1>
-          <p class="page-sub">${esc(section.about)}</p>
+          ${section.about ? `<p class="page-sub">${esc(section.about)}</p>` : ""}
           <p class="section-count">${docsWord(all.length)}</p>
         </div>
       </section>
@@ -95,7 +98,8 @@
       <span class="file-icon">${icon("file")}</span>
       <span class="file-name">${esc(d.title)}${showWhere ? `<small>${esc([sectionById(d.section).name, d.group].filter(Boolean).join(" · "))}</small>` : ""}</span>
       <span class="file-open">Відкрити${icon("external")}</span>
-    </a></li>`;
+    </a>${d.files.length ? `<ul class="file-sub">${d.files.map((f) => `
+      <li><a href="${esc(f.url)}" target="_blank" rel="noopener">${icon("file")}<span>${esc(f.name)}</span></a></li>`).join("")}</ul>` : ""}</li>`;
 
   // Документи розділу, а під ними групи (папки з папками в Drive) із заголовками.
   function fileLists(id, shown) {
@@ -177,6 +181,50 @@
     }
   });
 
+  // ---------- Живі дані з Drive ----------
+  // Дерево з API → та сама форма, що й у data.js. Група = папка, в якій є інші папки.
+  function fromTree(tree) {
+    const documents = [];
+    const sections = tree.sections.map((sec) => {
+      const m = (D.meta && D.meta[sec.id]) || {};
+      const s = { id: m.slug || sec.id, name: sec.name, folder: sec.id, url: sec.url, about: m.about || "", photo: m.photo || "", docs: [], groups: [] };
+      const doc = (n, group) => {
+        const files = n.kind === "folder" ? (n.children || []).filter((c) => c.kind === "file").map((f) => ({ name: f.name, url: f.url })) : [];
+        const d = { id: n.id, section: s.id, group, title: n.name, url: n.url, files };
+        documents.push(d);
+        return d;
+      };
+      for (const n of sec.items) {
+        const isGroup = n.kind === "folder" && (n.children || []).some((c) => c.kind === "folder");
+        if (isGroup) s.groups.push({ name: n.name, url: n.url, docs: n.children.map((c) => doc(c, n.name)) });
+        else s.docs.push(doc(n, null));
+      }
+      return s;
+    });
+    return { ...D, sections, documents, source: tree.source, updatedAt: tree.updatedAt };
+  }
+
+  let liveKey = "";
+  async function loadLive() {
+    try {
+      const res = await fetch(`${API}/api/public/tree`, { headers: { Accept: "application/json" } });
+      if (!res.ok) return;
+      const tree = await res.json();
+      if (!Array.isArray(tree.sections) || !tree.sections.length) return;
+      const key = JSON.stringify(tree.sections);
+      if (key === liveKey) return;
+      liveKey = key;
+      D = fromTree(tree);
+      // не перемальовувати під час набору в пошуку
+      if (document.activeElement?.id !== "section-search") render();
+    } catch (err) {
+      // бекенду немає (наприклад, статичний сервер) — лишаємо знімок з data.js
+    }
+  }
+
   window.addEventListener("hashchange", render);
   render();
+  loadLive();
+  setInterval(loadLive, 120_000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadLive(); });
 })();

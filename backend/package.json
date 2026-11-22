@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "start:public": "node src/public-server.js",
+    "dev:public": "node --watch src/public-server.js"
   },
   "dependencies": {
     "express": "^4.21.2",
