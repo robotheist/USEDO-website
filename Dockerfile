@@ -1,4 +1,4 @@
-# One container: the backend API plus the static frontend it serves.
+# Public site: the read-only Drive tree API plus the public frontend (branch public-ver).
 # Built and deployed by `gcloud run deploy --source .` — see backend/README.md.
 FROM node:22-slim
 
@@ -13,4 +13,4 @@ COPY backend/fixtures backend/fixtures
 COPY index.html app.js data.js styles.css kse-logo.svg ./
 
 USER node
-CMD ["node", "backend/src/server.js"]
+CMD ["node", "backend/src/public-server.js"]

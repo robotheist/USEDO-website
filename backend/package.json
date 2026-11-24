@@ -8,8 +8,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node src/public-server.js",
+    "dev": "node --watch src/public-server.js",
+    "start:internal": "node src/server.js",
+    "dev:internal": "node --watch src/server.js",
     "test": "node --test"
   },
   "dependencies": {
