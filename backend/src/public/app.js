@@ -63,6 +63,7 @@ export function createPublicApp(tree, { corsOrigins = [], serveFrontend = true }
   app.get("/api/health", (req, res) => {
     res.json({
       ok: !tree.lastError,
+      site: "public",
       source: tree.source.name,
       updatedAt: tree.tree?.updatedAt ?? null,
       counts: tree.tree ? countFiles(tree.tree.sections) : null,
@@ -81,8 +82,11 @@ export function createPublicApp(tree, { corsOrigins = [], serveFrontend = true }
   app.use("/api", (req, res) => res.status(404).json({ error: "Not found" }));
 
   if (serveFrontend) {
-    app.get("/", (req, res) => res.sendFile("index.html", { root: FRONTEND_ROOT }));
-    for (const f of FRONTEND_FILES) app.get(`/${f}`, (req, res) => res.sendFile(f, { root: FRONTEND_ROOT }));
+    // no-cache: the internal site may have run on the same port before, and the
+    // browser must not keep its old app.js / styles.css.
+    const send = (f) => (req, res) => res.set("Cache-Control", "no-cache").sendFile(f, { root: FRONTEND_ROOT });
+    app.get("/", send("index.html"));
+    for (const f of FRONTEND_FILES) app.get(`/${f}`, send(f));
   }
 
   // eslint-disable-next-line no-unused-vars

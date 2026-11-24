@@ -8,11 +8,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "test": "node --test",
-    "start:public": "node src/public-server.js",
-    "dev:public": "node --watch src/public-server.js"
+    "start": "node src/public-server.js",
+    "dev": "node --watch src/public-server.js",
+    "start:internal": "node src/server.js",
+    "dev:internal": "node --watch src/server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.21.2",
